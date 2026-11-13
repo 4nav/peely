@@ -7,7 +7,7 @@ export async function getWindowTabs(): Promise<LiveTab[]>{
         t.id === undefined ? []: [{
             id: t.id,
             title: t.title ?? '',
-            url: t.url ?? '',
+            url: t.url || t.pendingUrl || '',
             pinned: t.pinned,
             groupId: t.groupId,
             index: t.index,

@@ -1,4 +1,4 @@
-import { getWindowTabs, createGroup } from "./tabs";
+import { createGroup, getWindowTabs, ungroup } from './tabs'
 import type { groupColor, Workspace, SavedTab, WindowSpace } from "../types";
 import { getLiveMap, setLiveMap, updateSpace } from "./storage";
 
@@ -99,3 +99,39 @@ export async function restoreWorkspace(w: Workspace, live: Record<string,number>
     if (gid !== null) await setLiveMap({ ...(await getLiveMap()), [w.id]: gid })
     return gid
 }
+
+export async function deleteWorkspace(
+    space: WindowSpace,
+    id: string,
+    live: Record<string,number>,
+): Promise<WindowSpace> {
+    const gid = live[id]
+    if(gid!== undefined){
+        const inGrp = (await getWindowTabs()).filter((t) => t.groupId === gid)
+        await ungroup(inGrp.map((t) => t.id))
+    }
+    const map = await getLiveMap()
+    delete map[id]
+    await setLiveMap(map)
+
+    const nxt: WindowSpace = {
+        ...space,
+        workspaces: space.workspaces.filter((t) => t.id !== id),
+        activeId: space.activeId === id ? null: space.activeId,
+    }
+    await updateSpace(nxt)
+    return nxt
+}
+
+export async function clearCold(
+    space: WindowSpace,
+    live: Record<string,number>,
+): Promise<WindowSpace>{
+    const nxt: WindowSpace = {
+        ...space, 
+        workspaces: space.workspaces.filter((w) => live[w.id] !== undefined),
+    }
+    await updateSpace(nxt)
+    return nxt
+}
+
