@@ -26,3 +26,11 @@ export async function setWindowMap(map: Record<string,string>): Promise<void>{
     await chrome.storage.session.set({windowMap:map})
 }
 
+export async function getLiveMap(): Promise<Record<string,number>>{
+    const res = await chrome.storage.session.get('liveMap')
+    return (res.liveMap as Record<string,number> | undefined) ?? {}
+}
+
+export async function setLiveMap(map:Record<string,number>) {
+    await chrome.storage.session.set({liveMap: map})
+}

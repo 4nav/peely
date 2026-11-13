@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { act, useCallback, useEffect, useState } from "react";
 import { createGroup, getWindowTabs, ungroup } from './lib/tabs'
 import type { groupColor, LiveTab } from './types'
-import { loadWorkspaces, saveWorkspaces } from "./lib/storage"
-import { snapshotLiveGroups } from "./lib/workspace";
-import type { Workspace } from "./types";
+import { updateSpace } from "./lib/storage"
+import { syncSpace, restoreWorkspace } from './lib/workspace'
+import type { WindowSpace } from "./types";
+import { getCurrentSpace } from "./lib/spaces";
 
 const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan', 'orange', 'red']
 
@@ -28,9 +29,15 @@ async function groupByDomainTest(tabs: LiveTab[]){
 export default function App() {
   const [tabs, setTabs] = useState<LiveTab[]>([])
   const refresh = useCallback(() => {getWindowTabs().then(setTabs)}, [])
-  const [saved, setSaved] = useState<Workspace[]>([])
+  const [space, setSpace] = useState<WindowSpace | null>(null)
+  const [live, setLive] = useState<Record<string,number>>({})
+  const apply = (x: {space: WindowSpace; live: Record<string,number>}) => {
+    setSpace(x.space); 
+    setLive(x.live)
+  }
+
   useEffect(() => {
-    loadWorkspaces().then(setSaved)
+    getCurrentSpace().then(syncSpace).then(apply)
   },[])
 
   useEffect(() => {
@@ -50,11 +57,9 @@ export default function App() {
       <h1>Peel · {tabs.length} tabs </h1>
       <button onClick={() => groupByDomainTest(tabs).then(refresh)}>Test: group by domain</button>{' '}
       <button onClick={() => ungroup(tabs.filter((t) => t.groupId !== -1).map((t) => t.id)).then(refresh)}>Ungroup All</button>
-      <button onClick={async () => {
-        const list = await snapshotLiveGroups()
-        await saveWorkspaces(list)
-        setSaved(list)
-      }}> Test: save groups as workspaces</button>
+      <button onClick={() => space && syncSpace(space).then(apply)}>
+        Sync
+      </button>
       <ul>
         {tabs.map((t) => (
           <li key={t.id}>{t.title || t.url} {t.pinned ? '(pinned)':t.groupId !== -1 ? '(grouped)': ''}</li>
@@ -62,8 +67,19 @@ export default function App() {
       </ul>
       <h2>Saved</h2>
       <ul>
-        {saved.map((w) => (
-          <li key = {w.id}>{w.name} · {w.tabs.length} tabs</li>
+        {space?.workspaces.map((t) => (
+          <li key = {t.id}>
+            {t.id === space.activeId ? '★ ' : ''}{t.name} · {t.tabs.length} tabs ·{' '}
+            {live[t.id] !== undefined ? 'live' : 'cold'} {' '}
+            <button
+              onClick={async () => {
+                await restoreWorkspace(t,live)
+                const active = {...space, activeId: t.id}
+                await updateSpace(active)
+                syncSpace(active).then(apply)
+              }}
+            >Open</button>
+          </li>
         ))}
       </ul>
     </main>
