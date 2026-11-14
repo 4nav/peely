@@ -1,4 +1,4 @@
-export type groupColor = "grey" | "blue" | "red" | "pink" | "purple" | "red" | "yellow" | "green" | "cyan" | "orange"
+export type groupColor = "grey" | "blue" | "red" | "pink" | "purple" | "yellow" | "green" | "cyan" | "orange"
 
 export interface LiveTab {
     id: number
@@ -43,7 +43,25 @@ export type PeelRequest = {
 } | {
     type: 'clearCold';
     windowId: number
+} | {
+    type: 'restoreSnapshot';
+    windowId: number;
+    snapshotId: string
 }
 
 export type PeelResponse = {ok: true} | {ok: false; error: string}
+
+export type SnapshotReason = 'autosave' | 'pre-delete' | 'pre-clear' | 'pre-switch'
+
+export interface Snapshot{
+    id: string
+    v: 1
+    workspaceId: string
+    spaceKey: string
+    takenAt: number
+    reason: SnapshotReason
+    name: string
+    color: groupColor
+    tabs: SavedTab[]
+}
 

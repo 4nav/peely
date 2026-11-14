@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createGroup, getWindowTabs, ungroup } from "./lib/tabs";
 import { readWindowState } from "./lib/storage";
+import { loadSnapshots, type SnapshotMap } from "./lib/snapshots";
 import type { groupColor, LiveTab, PeelRequest, PeelResponse, WindowSpace } from "./types";
 const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan', 'orange', 'red']
 
@@ -35,6 +36,7 @@ export default function App(){
   const [tabs, setTabs] = useState<LiveTab[]>([]);
   const [space, setSpace] = useState<WindowSpace | null>(null);
   const [live, setLive] = useState<Record<string,number>>({});
+  const [snaps, setSnaps] = useState<SnapshotMap>({});
 
   const refreshTabs = useCallback(async() => {
     if(windowId === null)return;
@@ -46,6 +48,7 @@ export default function App(){
     const state = await readWindowState(windowId);
     setSpace(state.space);
     setLive(state.live);
+    setSnaps(await loadSnapshots());
   }, [windowId]);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export default function App(){
     refreshTabs();
 
     const onStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-      if((areaName === 'local' && changes.spaces) || (areaName === 'session')){
+      if((areaName === 'local' && (changes.spaces || changes.snapshots)) || areaName==='session'){
         refreshState();
       }
     };
@@ -112,7 +115,7 @@ export default function App(){
       <h2>Saved</h2>
       <button onClick={async() => {
         if(windowId === null || !space)return;
-        if(!confirm("Remove all closed workspaces? This can't be undone yet."))return;
+        if(!confirm("Remove all closed workspaces? You can bring them back from History"))return;
 
         await send({type: "clearCold", windowId});
         await refreshState();
@@ -142,7 +145,7 @@ export default function App(){
             <button onClick={async() => {
               if(windowId === null || !space)return;
 
-              const msg = live[w.id] !== undefined ? `Delete "${w.name}"? Its tabs stay open but ungrouped.` : `Delete "${w.name}"? This can't be undone yet.`;
+              const msg = live[w.id] !== undefined ? `Delete "${w.name}"? Its tabs stay open but ungrouped. You can bring it back from History.` : `Delete "${w.name}"? You can bring it back from History.`;
               if(!confirm(msg))return;
 
               await send({
@@ -157,6 +160,37 @@ export default function App(){
           </li>
         ))}
       </ul>
+      <h2>History</h2>
+      {space && Object.values(snaps).filter((list) => list[0]?.spaceKey === space.key).map((list) => {
+        const latest = list[0];
+        const gone = !space.workspaces.some((w) => w.id === latest.workspaceId);
+        return(
+          <details key={latest.workspaceId}>
+            <summary>
+              {latest.name}{gone ? " · deleted" : ""} · {list.length} snapshots
+            </summary>
+            <ul>
+              {list.map((s) => (
+                <li key={s.id}>
+                  {new Date(s.takenAt).toLocaleString()} · {s.reason} · {s.tabs.length} tabs{" "}
+                  <button onClick={async() => {
+                    if(windowId === null)return;
+
+                    await send({
+                      type: "restoreSnapshot",
+                      windowId,
+                      snapshotId: s.id
+                    });
+                    await refreshState();
+                  }}>
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
+      })}
     </main>
   );
 }
