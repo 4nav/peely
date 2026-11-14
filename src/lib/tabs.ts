@@ -1,8 +1,7 @@
 import type { groupColor, LiveTab } from "../types";
 
-export async function getWindowTabs(): Promise<LiveTab[]>{
-    const win = await chrome.windows.getCurrent()
-    const tabs = await chrome.tabs.query({windowId: win.id})
+export async function getWindowTabs(windowId: number): Promise<LiveTab[]>{
+    const tabs = await chrome.tabs.query({windowId})
     return tabs.flatMap((t) => 
         t.id === undefined ? []: [{
             id: t.id,

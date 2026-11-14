@@ -7,11 +7,9 @@ const overlap = (a: string[], b: string[]) => {
     return a.filter((t) => sb.has(t)).length / Math.max(1, Math.min(a.length, b.length))
 }
 
-
-export async function syncSpace(space: WindowSpace){
-    const window = await chrome.windows.getCurrent()
-    const grps = await chrome.tabGroups.query({windowId: window.id})
-    const tabs = await getWindowTabs()
+export async function syncSpace(windowId: number, space: WindowSpace){
+    const grps = await chrome.tabGroups.query({windowId})
+    const tabs = await getWindowTabs(windowId)
     const now = Date.now()
     const prev = await getLiveMap()
 
@@ -68,17 +66,16 @@ export async function syncSpace(space: WindowSpace){
     return {space: next, live}
 }
 
-export async function restoreWorkspace(w: Workspace, live: Record<string,number>){
+export async function restoreWorkspace(windowId: number, w: Workspace, live: Record<string,number>){
     const liveGid = live[w.id]
     if(liveGid !== undefined){
-        const first = (await getWindowTabs()).find((t) => t.groupId === liveGid)
+        const first = (await getWindowTabs(windowId)).find((t) => t.groupId === liveGid)
         if(first)await chrome.tabs.update(first.id, {active: true})
         await chrome.tabGroups.update(liveGid, {collapsed: false})
         return liveGid
     }
 
-    const window = await chrome.windows.getCurrent()
-    const existing = (await getWindowTabs()).filter((t) => !t.pinned)
+    const existing = (await getWindowTabs(windowId)).filter((t) => !t.pinned)
     const ids: number[] = []
 
     for(const saved of w.tabs){
@@ -89,7 +86,7 @@ export async function restoreWorkspace(w: Workspace, live: Record<string,number>
             continue
         }
         const tab = await chrome.tabs.create({
-            windowId: window.id,
+            windowId,
             url: saved.url,
             active: false
         })
@@ -101,13 +98,14 @@ export async function restoreWorkspace(w: Workspace, live: Record<string,number>
 }
 
 export async function deleteWorkspace(
+    windowId: number,
     space: WindowSpace,
     id: string,
     live: Record<string,number>,
 ): Promise<WindowSpace> {
     const gid = live[id]
     if(gid!== undefined){
-        const inGrp = (await getWindowTabs()).filter((t) => t.groupId === gid)
+        const inGrp = (await getWindowTabs(windowId)).filter((t) => t.groupId === gid)
         await ungroup(inGrp.map((t) => t.id))
     }
     const map = await getLiveMap()

@@ -2,9 +2,8 @@ import { getWindowTabs } from "./tabs";
 import { getWindowMap, loadSpaces, saveSpaces, setWindowMap } from "./storage";
 import type { WindowSpace } from "../types";
 
-export async function getCurrentSpace(): Promise<WindowSpace> {
-    const window = await chrome.windows.getCurrent()
-    const winkey = String(window.id)
+export async function getCurrentSpace(windowId: number): Promise<WindowSpace> {
+    const winkey = String(windowId)
     const mp = await getWindowMap()
     const spaces = await loadSpaces()
 
@@ -12,7 +11,7 @@ export async function getCurrentSpace(): Promise<WindowSpace> {
     if(bound)return bound
 
     //this is so stupid bbrah. UPD: Doesn't work
-    const live = new Set((await getWindowTabs()).filter((t) => !t.pinned && t.url.startsWith('http')).map((t) => t.url),)
+    const live = new Set((await getWindowTabs(windowId)).filter((t) => !t.pinned && t.url.startsWith('http')).map((t) => t.url),)
     const taken = new Set(Object.values(mp))
     let best: WindowSpace | undefined
     let bestScore = 0

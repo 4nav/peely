@@ -29,3 +29,21 @@ export interface WindowSpace {
     activeId: string | null
 }
 
+export type PeelRequest = {
+    type: 'sync';
+    windowId: number
+} | {
+    type: 'open';
+    windowId: number;
+    id: string;
+} | {
+    type: 'delete';
+    windowId: number;
+    id: string;
+} | {
+    type: 'clearCold';
+    windowId: number
+}
+
+export type PeelResponse = {ok: true} | {ok: false; error: string}
+

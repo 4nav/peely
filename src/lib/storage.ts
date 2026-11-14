@@ -34,3 +34,16 @@ export async function getLiveMap(): Promise<Record<string,number>>{
 export async function setLiveMap(map:Record<string,number>) {
     await chrome.storage.session.set({liveMap: map})
 }
+
+export function withLock<T>(fn: () => Promise<T>): Promise<T>{
+    return navigator.locks.request('peel-storage', fn) as Promise<T>
+}
+
+export async function readWindowState(windowId: number): Promise<{space: WindowSpace | null; live: Record<string,number> }>{
+    const [spaces, map, live] = await Promise.all([loadSpaces(), getWindowMap(), getLiveMap()])
+    const key = map[String(windowId)]
+    return {
+        space: spaces.find((s) => s.key === key) ?? null,
+        live
+    }
+}
