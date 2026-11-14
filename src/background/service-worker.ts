@@ -1,5 +1,29 @@
-import { clearColdIn, deleteWorkspaceIn, forgetWindow, openWorkspace, syncAll, syncWindow } from "../lib/ops";
+import { autosaveSnapshots,clearColdIn, deleteWorkspaceIn,  forgetWindow, openWorkspace, restoreSnapshotIn, syncAll, syncWindow} from "../lib/ops";
+import { AUTOSAVE_TIMER } from "../lib/snapshots";
 import type { PeelRequest, PeelResponse } from "../types";
+
+const AUTOSAVE_ALARM = 'peel-autosave';
+
+async function ensureAutosaveAlarm() {
+  if(await chrome.alarms.get(AUTOSAVE_ALARM))return;
+
+  await chrome.alarms.create(AUTOSAVE_ALARM, {
+    delayInMinutes: AUTOSAVE_TIMER,
+    periodInMinutes: AUTOSAVE_TIMER
+  });
+}
+
+void ensureAutosaveAlarm().catch((error: unknown) => {
+  console.error("[peel] failed to initialize autosave alarm", error);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if(alarm.name !== AUTOSAVE_ALARM)return;
+
+  void syncAll().then(() => autosaveSnapshots()).catch((error: unknown) => {
+    console.error("[peel] autosave failed", error);
+  });
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({openPanelOnActionClick: true});
@@ -76,6 +100,9 @@ async function run(req: PeelRequest): Promise<void>{
       break;
     case "clearCold":
       await clearColdIn(req.windowId);
+      break;
+    case "restoreSnapshot": 
+      await restoreSnapshotIn(req.windowId, req.snapshotId);
       break;
   }
 }
