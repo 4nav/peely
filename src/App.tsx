@@ -105,6 +105,29 @@ export default function App(){
         await refreshState();
       }}> Sync </button>
 
+      <button onClick={async() => {
+        if(windowId === null)return
+        const g = (await chrome.tabGroups.query({windowId}))[0]
+        if(!g)return
+        const w = await chrome.windows.create({ state: 'minimized', url: 'about:blank' })
+        if (w?.id === undefined) return
+        const moved = await chrome.tabGroups.move(g.id, { windowId: w.id, index: -1 })
+        if(moved?.id === undefined)return
+        console.log('group id before/after:', g.id, moved.id)
+      }}>
+        Spike: Park first group
+      </button>
+
+      <button onClick={async () => {
+        if (windowId === null) return
+        const parked = (await chrome.windows.getAll({ windowTypes: ['normal'] })).find((w) => w.state === 'minimized')
+        if (!parked?.id) return
+        const g = (await chrome.tabGroups.query({ windowId: parked.id }))[0]
+        if (g) await chrome.tabGroups.move(g.id, { windowId, index: -1 })
+      }}>
+        Spike: bring back
+      </button>
+
       <ul>
         {tabs.map((t) => (<li key={t.id}>
           {t.title || t.url}{" "}
