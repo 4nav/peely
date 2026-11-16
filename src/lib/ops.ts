@@ -157,7 +157,7 @@ export async function autosave(now: number = Date.now()) {
     });    
 }
 
-const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan','orange', 'red', 'grey']
+export const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan','orange', 'red', 'grey']
 
 export async function applyClustersIn(windowId: number, clusters: { name: string; tabIds: number[] }[]) {
     return withLock(async () => {

@@ -1,30 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { createGroup, getWindowTabs, ungroup } from "./lib/tabs";
+import { getWindowTabs } from "./lib/tabs";
 import { readWindowState } from "./lib/storage";
 import { loadSnapshots, type SnapshotMap } from "./lib/snapshots";
-import type { groupColor, LiveTab, PeelRequest, PeelResponse, WindowSpace } from "./types";
+import type { LiveTab, PeelRequest, PeelResponse, WindowSpace } from "./types";
 import { clusterTabs } from "./lib/clustering";
 import { parkedWorkspaceIds } from "./lib/park";
-
-const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan', 'orange', 'red']
-
-const domainof = (url: string) => {
-  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return '' }
-}
-
-async function groupByDomainTest(tabs: LiveTab[]){
-  const byDomain = new Map<string, number[]>()
-  for(const t of tabs){
-    const d= domainof(t.url)
-    if(t.pinned || !d)continue
-    byDomain.set(d, [...(byDomain.get(d) ?? []), t.id])
-  }
-  let i = 0
-  for(const [domain, ids] of byDomain){
-    if(ids.length < 2)continue
-    await createGroup(ids, domain, COLORS[i++ % COLORS.length])
-  }
-}
+import type { PlanItem } from "./lib/ui";
+import Workspaces from "./components/Workspaces";
+import Review from "./components/Review";
+import History from "./components/History";
 
 async function send(req: PeelRequest){
   const res = await chrome.runtime.sendMessage(req) as PeelResponse | undefined;
@@ -40,8 +24,11 @@ export default function App(){
   const [space, setSpace] = useState<WindowSpace | null>(null);
   const [live, setLive] = useState<Record<string,number>>({});
   const [snaps, setSnaps] = useState<SnapshotMap>({});
-  const [plan, setPlan] = useState<{ name: string; tabIds: number[]; confidence: number; on: boolean }[] | null>(null);
+  const [plan, setPlan] = useState<PlanItem[] | null>(null);
   const [unsorted, setUnsorted] = useState<number[]>([]);
+  const [view, setView] = useState<'workspaces' | 'review' | 'history'>('workspaces');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [parked, setParked] = useState<string[]>([]);
 
   const refreshTabs = useCallback(async() => {
@@ -100,151 +87,92 @@ export default function App(){
     };
   }, [windowId, refreshTabs]);
 
+  const act = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    setBusy(false);
+  };
+
+  const scan = () => {
+    const loose = tabs.filter((t) => !t.pinned && t.groupId === -1 && t.url.startsWith('http'));
+    const r = clusterTabs(loose);
+    setPlan(r.clusters.map((c) => ({ ...c, on: true })));
+    setUnsorted(r.unsorted);
+    setView('review');
+  };
+
+  const titleOf = (id: number) => {
+    const t = tabs.find((x) => x.id === id);
+    return t?.title || t?.url || 'Untitled tab';
+  };
+
   return(
-    <main style={{padding: 16}}>
-      <h1>Peel · {tabs.length} tabs</h1>
+    <main className="app">
+      {error && <p className="error" role="alert">{error} <button className="link" onClick={() => setError(null)}>Dismiss</button></p>}
 
-      <button onClick={() => groupByDomainTest(tabs).then(refreshTabs)}> Test: Group by Domain</button>{" "}
-      <button onClick={() => ungroup(tabs.filter((t) => t.groupId !== -1).map((t) => t.id)).then(refreshTabs)}>Ungrup all</button>
-      <button onClick={async() => {
-        if(windowId === null)return;
-        await send({type: "sync", windowId});
-        await refreshState();
-      }}> Sync </button>
+      {view === 'workspaces' && (
+        <Workspaces
+          space={space} live={live} parked={parked} snaps={snaps} busy={busy}
+          onScan={scan}
+          onHistory={() => setView('history')}
+          onOpen={(id) => act(async () => {
+            if(windowId === null)return;
+            await send({type: "open", windowId, id});
+            await refreshState();
+            await refreshTabs();
+          })}
+          onDelete={(id) => act(async () => {
+            const w = space?.workspaces.find((x) => x.id === id);
+            if(windowId === null || !w)return;
+            const msg = live[id] !== undefined ? `Delete "${w.name}"? Its tabs stay open but ungrouped. You can bring it back from History.` : `Delete "${w.name}"? You can bring it back from History.`;
+            if(!confirm(msg))return;
+            await send({type: "delete", windowId, id});
+            await refreshState();
+          })}
+          onClearCold={() => act(async () => {
+            if(windowId === null)return;
+            if(!confirm("Remove all closed workspaces? You can bring them back from History"))return;
+            await send({type: "clearCold", windowId});
+            await refreshState();
+          })}
+        />
+      )}
 
+      {view === 'review' && plan && (
+        <Review
+          plan={plan} unsorted={unsorted.length} titleOf={titleOf} busy={busy}
+          onChange={setPlan}
+          onRescan={scan}
+          onBack={() => { setPlan(null); setUnsorted([]); setView('workspaces'); }}
+          onApply={() => act(async () => {
+            if(windowId === null)return;
+            await send({
+              type: "applyClusters",
+              windowId,
+              clusters: plan.filter((c) => c.on).map((c) => ({ name: c.name.trim() || "Untitled", tabIds: c.tabIds })),
+            });
+            setPlan(null);
+            setUnsorted([]);
+            setView('workspaces');
+            await refreshTabs();
+            await refreshState();
+          })}
+        />
+      )}
 
-      <ul>
-        {tabs.map((t) => (<li key={t.id}>
-          {t.title || t.url}{" "}
-          {t.pinned ? "(pinned)": t.groupId !== -1 ? "(grouped)": ""}
-        </li>
-      ))}
-      </ul>
-      <h2>Saved</h2>
-      <button onClick={async() => {
-        if(windowId === null || !space)return;
-        if(!confirm("Remove all closed workspaces? You can bring them back from History"))return;
-
-        await send({type: "clearCold", windowId});
-        await refreshState();
-      }}>Clear Cold</button>
-      <button onClick={() => {
-        const r = clusterTabs(tabs.filter((t) => !t.pinned && t.groupId === -1 && t.url.startsWith('http')))
-        setPlan(r.clusters.map((c) => ({ ...c, on: true })))
-        setUnsorted(r.unsorted)
-      }}>
-        Scan Tabs
-      </button>
-    {plan && (
-      <section>
-        <h2>Suggestions</h2>
-        {plan.length === 0 && <p>Nothing to group: no loose tabs, or none looked related.</p>}
-        {plan.map((c, i) => (
-          <div key={i}>
-            <input type="checkbox" checked={c.on}
-              onChange={() => setPlan(plan.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} />{" "}
-            <input value={c.name}
-              onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />{" "}
-            {c.tabIds.length} tabs · {Math.round(c.confidence * 100)}%
-            <ul>
-              {c.tabIds.map((id) => <li key={id}>{tabs.find((t) => t.id === id)?.title}</li>)}
-            </ul>
-          </div>
-        ))}
-        {unsorted.length > 0 && (
-          <div>
-            <b>Unsorted · {unsorted.length}</b> (left as they are)
-            <ul>
-              {unsorted.map((id) => <li key={id}>{tabs.find((t) => t.id === id)?.title}</li>)}
-            </ul>
-          </div>
-        )}
-        <button disabled={!plan.some((c) => c.on)} onClick={async () => {
-          if (windowId === null) return
-          await send({
-            type: "applyClusters",
-            windowId,
-            clusters: plan.filter((c) => c.on).map((c) => ({ name: c.name.trim() || "Untitled", tabIds: c.tabIds })),
-          })
-          setPlan(null)
-          setUnsorted([])
-          await refreshTabs()
-          await refreshState()
-        }}>Apply {plan.filter((c) => c.on).length} groups</button>{" "}
-        <button onClick={() => { setPlan(null); setUnsorted([]) }}>Cancel</button>
-      </section>
-    )}
-
-      <ul>
-        {space?.workspaces.map((w) => (
-          <li key={w.id}>
-            {w.id === space.activeId?"★ " : ""}
-            {w.name} · {w.tabs.length} tabs ·{" "}
-            {live[w.id] === undefined ? "cold" : parked.includes(w.id) ? "parked" : "live"}{" "}
-
-            <button onClick={async() => {
-              if(windowId === null)return;
-
-              await send({
-                type: "open",
-                windowId,
-                id: w.id
-              });
-              await refreshState();
-              await refreshTabs();
-            }}>
-              Open
-            </button>
-
-            <button onClick={async() => {
-              if(windowId === null || !space)return;
-
-              const msg = live[w.id] !== undefined ? `Delete "${w.name}"? Its tabs stay open but ungrouped. You can bring it back from History.` : `Delete "${w.name}"? You can bring it back from History.`;
-              if(!confirm(msg))return;
-
-              await send({
-                type: "delete",
-                windowId, 
-                id:w.id
-              });
-              await refreshState();
-            }}>
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
-      <h2>History</h2>
-      {space && Object.values(snaps).filter((list) => list[0]?.spaceKey === space.key).map((list) => {
-        const latest = list[0];
-        const gone = !space.workspaces.some((w) => w.id === latest.workspaceId);
-        return(
-          <details key={latest.workspaceId}>
-            <summary>
-              {latest.name}{gone ? " · deleted" : ""} · {list.length} snapshots
-            </summary>
-            <ul>
-              {list.map((s) => (
-                <li key={s.id}>
-                  {new Date(s.takenAt).toLocaleString()} · {s.reason} · {s.tabs.length} tabs{" "}
-                  <button onClick={async() => {
-                    if(windowId === null)return;
-
-                    await send({
-                      type: "restoreSnapshot",
-                      windowId,
-                      snapshotId: s.id
-                    });
-                    await refreshState();
-                  }}>
-                    Restore
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )
-      })}
+      {view === 'history' && space && (
+        <History
+          space={space} snaps={snaps} busy={busy}
+          onBack={() => setView('workspaces')}
+          onRestore={(snapshotId) => act(async () => {
+            if(windowId === null)return;
+            await send({type: "restoreSnapshot", windowId, snapshotId});
+            await refreshState();
+            setView('workspaces');
+          })}
+        />
+      )}
     </main>
   );
 }

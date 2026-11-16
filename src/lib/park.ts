@@ -20,7 +20,7 @@ export async function clearParkWindowId(): Promise<void>{
 async function ensureParkWindow(): Promise<number>{
     const existing = await getParkWindowId()
     if(existing !== null)return existing
-    const w = await chrome.windows.create({state: "minimized", url: "about: blank"})
+    const w = await chrome.windows.create({state: "minimized", url: "about:blank"})
     if(w?.id === undefined)throw new Error('Could not create the second window')
     await chrome.storage.local.set({[KEY]: w.id})
     return w.id
