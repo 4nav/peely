@@ -5,6 +5,7 @@
 Peel is a Chrome extension that helps you organize your tabs into workspaces, switch between them, and pick up from where you left off without having 50 tabs cluttering your browser.
 
 ## Try Peel
+![Peel screenshot](docs/peely_demo.png)
 
 [Download the latest release](https://github.com/4nav/peely/releases/latest)
 
