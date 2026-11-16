@@ -1,17 +1,12 @@
-# 🍌 Peel
+# Peel
 
 **Too many tabs? Give them a peel.**
 
-Peel is a Chrome extension that helps you organize your tabs into workspaces, switch between them, and pick up right where you left off without having 50 tabs cluttering your browser.
+Peel is a Chrome extension that helps you organize your tabs into workspaces, switch between them, and pick up from where you left off without having 50 tabs cluttering your browser.
 
-## Features
+## Try Peel
 
-- **Workspaces:** Keep tabs for different projects, tasks, and interests separate.
-- **Tab Groups:** Automatically organize related tabs into Chrome tab groups.
-- **Workspace Switching:** Switch between different browsing contexts without losing your tabs.
-- **Session Restoration:** Bring back tabs from previously saved workspaces.
-- **Automatic Sync:** Keep workspace state updated as you browse.
-- **Multi-window Support:** Manage your workspaces across multiple Chrome windows.
+[Download the latest release](https://github.com/4nav/peely/releases/latest)
 
 ## Installation
 
@@ -21,7 +16,14 @@ Peel is a Chrome extension that helps you organize your tabs into workspaces, sw
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.
 
-That's it!
+
+## Features
+
+- **Workspaces:** Make separate spaces for different projects, tasks, or whatever else you have going on.
+- **Tab Groups:** Automatically organize related tabs into Chrome tab groups. (PS: if you look at how I impl this in the code its so funny)
+- **Workspace Switching:** Jump between workspaces without losing all your tabs.
+- **Session Restoration:** Bring back tabs from your previously saved workspaces.
+- **Multi-window Support:** Manage your workspaces across multiple Chrome windows.
 
 ## Tech Stack
 
@@ -30,6 +32,4 @@ That's it!
 - Vite
 - Chrome Extensions API (Manifest V3)
 
-## Feedback
-
-Found a bug or have an idea? Feel free to open an issue or submit a pull request.
+Built for W4 of Hackclub Terra
