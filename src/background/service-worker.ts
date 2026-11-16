@@ -1,5 +1,6 @@
-import { autosaveSnapshots,clearColdIn, deleteWorkspaceIn,  forgetWindow, openWorkspace, restoreSnapshotIn, syncAll, syncWindow} from "../lib/ops";
+import { applyClustersIn, autosave,clearColdIn, deleteWorkspaceIn,  forgetWindow, openWorkspace, restoreSnapshotIn, syncAll, syncWindow} from "../lib/ops";
 import { AUTOSAVE_TIMER } from "../lib/snapshots";
+import { clearParkWindowId } from "../lib/park";
 import type { PeelRequest, PeelResponse } from "../types";
 
 const AUTOSAVE_ALARM = 'peel-autosave';
@@ -20,7 +21,7 @@ void ensureAutosaveAlarm().catch((error: unknown) => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if(alarm.name !== AUTOSAVE_ALARM)return;
 
-  void syncAll().then(() => autosaveSnapshots()).catch((error: unknown) => {
+  void syncAll().then(() => autosave()).catch((error: unknown) => {
     console.error("[peel] autosave failed", error);
   });
 });
@@ -31,7 +32,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void syncAll();
+  void clearParkWindowId().then(() => syncAll());
 });
 
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -103,6 +104,9 @@ async function run(req: PeelRequest): Promise<void>{
       break;
     case "restoreSnapshot": 
       await restoreSnapshotIn(req.windowId, req.snapshotId);
+      break;
+    case "applyClusters":
+      await applyClustersIn(req.windowId, req.clusters);
       break;
   }
 }

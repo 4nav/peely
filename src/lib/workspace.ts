@@ -1,6 +1,7 @@
 import { createGroup, getWindowTabs, ungroup } from './tabs'
 import type { groupColor, Workspace, SavedTab, WindowSpace } from "../types";
 import { getLiveMap, setLiveMap, updateSpace } from "./storage";
+import { getParkWindowId } from './park';
 
 const overlap = (a: string[], b: string[]) => {
     const sb = new Set(b)
@@ -8,24 +9,31 @@ const overlap = (a: string[], b: string[]) => {
 }
 
 export async function syncSpace(windowId: number, space: WindowSpace){
+    const parkId = await getParkWindowId()
     const grps = await chrome.tabGroups.query({windowId})
-    const tabs = await getWindowTabs(windowId)
+    const parkGrps = parkId !== null ? await chrome.tabGroups.query({ windowId: parkId }) : []
+    const tabs = [...(await getWindowTabs(windowId)),...(parkId !== null ? await getWindowTabs(parkId) : []),]
     const now = Date.now()
     const prev = await getLiveMap()
 
     const tabsOf = (gid: number): SavedTab[] => tabs.filter((t) => t.groupId === gid).sort((a,b) => a.index - b.index).map((t) => ({url: t.url, title: t.title}))
     const live: Record<string, number> = {}
     const open = new Set(grps.map((t) => t.id))
+    const exists = new Set([...grps, ...parkGrps].map((g) => g.id))
 
     for(const w of space.workspaces){
         const gid = prev[w.id]
-        if(gid !== undefined && open.has(gid)){
+        if(gid !== undefined && exists.has(gid)){
             live[w.id] = gid;
             open.delete(gid)
         }
     }
 
-    for(const g of grps.filter((g) => open.has(g.id))){
+    const mine = new Set(space.workspaces.map((w) => w.id))
+    const elsewhere = new Set(Object.entries(prev).filter(([id]) => !mine.has(id)).map(([,gid]) => gid))
+
+    for(const g of [...grps, ...parkGrps]){
+        if(elsewhere.has(g.id) || Object.values(live).includes(g.id))continue
         const urls = tabsOf(g.id).map((t) => t.url)
         const match = space.workspaces.find((w) => !(w.id in live) && w.name === (g.title || 'Untitled') && overlap(w.tabs.map((t) => t.url), urls) >= 0.5,)
         if(match){
@@ -34,7 +42,7 @@ export async function syncSpace(windowId: number, space: WindowSpace){
         }
     }
 
-    const byId = new Map(grps.map((t) => [t.id,t]))
+    const byId = new Map([...grps, ...parkGrps].map((t) => [t.id, t]))
     const wrkspcs: Workspace[] = space.workspaces.map((w) => {
         const gid = live[w.id]
         const g = gid !== undefined ? byId.get(gid) : undefined
@@ -59,8 +67,8 @@ export async function syncSpace(windowId: number, space: WindowSpace){
         workspaces: wrkspcs,
         activeId: wrkspcs.some((w) => w.id === space.activeId) ? space.activeId : null,
     }
-    const mine = new Set(wrkspcs.map((w) => w.id))
-    const others = Object.fromEntries(Object.entries(prev).filter(([id]) => !mine.has(id)))
+    const mineNew = new Set(wrkspcs.map((w) => w.id))
+    const others = Object.fromEntries(Object.entries(prev).filter(([id]) => !mineNew.has(id)))
     await updateSpace(next)
     await setLiveMap({...others, ...live})
     return {space: next, live}
@@ -105,8 +113,13 @@ export async function deleteWorkspace(
 ): Promise<WindowSpace> {
     const gid = live[id]
     if(gid!== undefined){
-        const inGrp = (await getWindowTabs(windowId)).filter((t) => t.groupId === gid)
-        await ungroup(inGrp.map((t) => t.id))
+        const inGrp = await chrome.tabs.query({groupId: gid})
+        const ids = inGrp.flatMap((t) => t.id === undefined ? [] : [t.id])
+        if(inGrp.some((t) => t.windowId === windowId)){
+            await ungroup(ids)
+        } else if(ids.length > 0){
+            await chrome.tabs.remove(ids)
+        }
     }
     const map = await getLiveMap()
     delete map[id]

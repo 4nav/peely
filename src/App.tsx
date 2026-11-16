@@ -3,6 +3,9 @@ import { createGroup, getWindowTabs, ungroup } from "./lib/tabs";
 import { readWindowState } from "./lib/storage";
 import { loadSnapshots, type SnapshotMap } from "./lib/snapshots";
 import type { groupColor, LiveTab, PeelRequest, PeelResponse, WindowSpace } from "./types";
+import { clusterTabs } from "./lib/clustering";
+import { parkedWorkspaceIds } from "./lib/park";
+
 const COLORS: groupColor[] = ['blue', 'green', 'yellow', 'pink', 'purple', 'cyan', 'orange', 'red']
 
 const domainof = (url: string) => {
@@ -37,6 +40,9 @@ export default function App(){
   const [space, setSpace] = useState<WindowSpace | null>(null);
   const [live, setLive] = useState<Record<string,number>>({});
   const [snaps, setSnaps] = useState<SnapshotMap>({});
+  const [plan, setPlan] = useState<{ name: string; tabIds: number[]; confidence: number; on: boolean }[] | null>(null);
+  const [unsorted, setUnsorted] = useState<number[]>([]);
+  const [parked, setParked] = useState<string[]>([]);
 
   const refreshTabs = useCallback(async() => {
     if(windowId === null)return;
@@ -49,6 +55,7 @@ export default function App(){
     setSpace(state.space);
     setLive(state.live);
     setSnaps(await loadSnapshots());
+    setParked(await parkedWorkspaceIds(state.live));
   }, [windowId]);
 
   useEffect(() => {
@@ -105,28 +112,6 @@ export default function App(){
         await refreshState();
       }}> Sync </button>
 
-      <button onClick={async() => {
-        if(windowId === null)return
-        const g = (await chrome.tabGroups.query({windowId}))[0]
-        if(!g)return
-        const w = await chrome.windows.create({ state: 'minimized', url: 'about:blank' })
-        if (w?.id === undefined) return
-        const moved = await chrome.tabGroups.move(g.id, { windowId: w.id, index: -1 })
-        if(moved?.id === undefined)return
-        console.log('group id before/after:', g.id, moved.id)
-      }}>
-        Spike: Park first group
-      </button>
-
-      <button onClick={async () => {
-        if (windowId === null) return
-        const parked = (await chrome.windows.getAll({ windowTypes: ['normal'] })).find((w) => w.state === 'minimized')
-        if (!parked?.id) return
-        const g = (await chrome.tabGroups.query({ windowId: parked.id }))[0]
-        if (g) await chrome.tabGroups.move(g.id, { windowId, index: -1 })
-      }}>
-        Spike: bring back
-      </button>
 
       <ul>
         {tabs.map((t) => (<li key={t.id}>
@@ -143,13 +128,59 @@ export default function App(){
         await send({type: "clearCold", windowId});
         await refreshState();
       }}>Clear Cold</button>
+      <button onClick={() => {
+        const r = clusterTabs(tabs.filter((t) => !t.pinned && t.groupId === -1 && t.url.startsWith('http')))
+        setPlan(r.clusters.map((c) => ({ ...c, on: true })))
+        setUnsorted(r.unsorted)
+      }}>
+        Scan Tabs
+      </button>
+    {plan && (
+      <section>
+        <h2>Suggestions</h2>
+        {plan.length === 0 && <p>Nothing to group: no loose tabs, or none looked related.</p>}
+        {plan.map((c, i) => (
+          <div key={i}>
+            <input type="checkbox" checked={c.on}
+              onChange={() => setPlan(plan.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} />{" "}
+            <input value={c.name}
+              onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />{" "}
+            {c.tabIds.length} tabs · {Math.round(c.confidence * 100)}%
+            <ul>
+              {c.tabIds.map((id) => <li key={id}>{tabs.find((t) => t.id === id)?.title}</li>)}
+            </ul>
+          </div>
+        ))}
+        {unsorted.length > 0 && (
+          <div>
+            <b>Unsorted · {unsorted.length}</b> (left as they are)
+            <ul>
+              {unsorted.map((id) => <li key={id}>{tabs.find((t) => t.id === id)?.title}</li>)}
+            </ul>
+          </div>
+        )}
+        <button disabled={!plan.some((c) => c.on)} onClick={async () => {
+          if (windowId === null) return
+          await send({
+            type: "applyClusters",
+            windowId,
+            clusters: plan.filter((c) => c.on).map((c) => ({ name: c.name.trim() || "Untitled", tabIds: c.tabIds })),
+          })
+          setPlan(null)
+          setUnsorted([])
+          await refreshTabs()
+          await refreshState()
+        }}>Apply {plan.filter((c) => c.on).length} groups</button>{" "}
+        <button onClick={() => { setPlan(null); setUnsorted([]) }}>Cancel</button>
+      </section>
+    )}
 
       <ul>
         {space?.workspaces.map((w) => (
           <li key={w.id}>
             {w.id === space.activeId?"★ " : ""}
             {w.name} · {w.tabs.length} tabs ·{" "}
-            {live[w.id] !== undefined? "live": "cold"}{" "}
+            {live[w.id] === undefined ? "cold" : parked.includes(w.id) ? "parked" : "live"}{" "}
 
             <button onClick={async() => {
               if(windowId === null)return;

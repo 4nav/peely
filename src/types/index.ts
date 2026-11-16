@@ -47,6 +47,10 @@ export type PeelRequest = {
     type: 'restoreSnapshot';
     windowId: number;
     snapshotId: string
+} | {
+    type: 'applyClusters';
+    windowId: number;
+    clusters: {name:string, tabIds: number[]}[]
 }
 
 export type PeelResponse = {ok: true} | {ok: false; error: string}

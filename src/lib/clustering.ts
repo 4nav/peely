@@ -124,14 +124,14 @@ export function clusterTabs(tabs: ClusterInput[]): ClusterRes{
         }
         const v: Vec = new Map()
         for(const [t,c] of tf){
-            v.set(t, c * Math.log((n + 1) / ((df.get(t) ?? 0) + 1) + 1))
+            v.set(t, c * (Math.log((n + 1) / ((df.get(t) ?? 0) + 1)) + 1))
         }
         return v        
     })
 
     const sim: number[][] = Array.from({length: n}, () => new Array<number>(n).fill(0))
     for(let i = 0; i < n; ++i){
-        for(let j = i; j < n; ++j){
+        for(let j = i + 1; j < n; ++j){
             const s = (hosts[i] !== '' && hosts[i] === hosts[j] ? W.domain : 0) + (cats[i] !== null && cats[i] === cats[j] ? W.category : 0) + W.text * cosine(vecs[i], vecs[j])
             sim[i][j] = sim[j][i] = Math.min(1,s)
         }
@@ -152,7 +152,7 @@ export function clusterTabs(tabs: ClusterInput[]): ClusterRes{
         let bi = 0
         let bj = 1
         for(let i = 0; i < groups.length; ++i){
-            for(let j = i + 1; j < n; ++j){
+            for(let j = i + 1; j < groups.length; ++j){
                 const s = link(groups[i], groups[j])
                 if(s > best){
                     best = s
@@ -161,7 +161,7 @@ export function clusterTabs(tabs: ClusterInput[]): ClusterRes{
                 }
             }
         }
-        if(best > THRESHOLD)break
+        if(best < THRESHOLD)break
         groups[bi] = groups[bi].concat(groups[bj])
         groups = groups.filter((_, idx) => idx !== bj)
     }
